@@ -133,9 +133,9 @@ src/
 
 ## 📚 Documentation
 
-- [DISCORD_SETUP.md](DISCORD_SETUP.md) - Discord bot setup guide
-- [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md) - Automated deployment
-- [DEV_LOG.md](DEV_LOG.md) - Development history and decisions
+- [docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md) - Discord bot setup guide
+- [docs/GITHUB_ACTIONS_SETUP.md](docs/GITHUB_ACTIONS_SETUP.md) - Automated deployment
+- [docs/DEV_LOG.md](docs/DEV_LOG.md) - Development history and decisions
 
 ## 🛠️ Development
 
