@@ -1,0 +1,12 @@
+name: gutterbot
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - requests>=2.31.0
+  - python-dotenv>=1.0.0
+  - discord.py>=2.3.0
+  - pip:
+    - -r requirements.txt
