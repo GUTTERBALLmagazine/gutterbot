@@ -63,7 +63,8 @@ jobs:
         )
         
         # Scrape and match
-        matches = scraper.scrape_and_match(usernames)
+        import asyncio
+        matches = asyncio.get_event_loop().run_until_complete(scraper.scrape_and_match(usernames))
         
         # Post to discord webhook if we have matches
         webhook_url = os.getenv('DISCORD_WEBHOOK_URL')

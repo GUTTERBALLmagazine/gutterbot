@@ -1,4 +1,4 @@
-# 🎵 Gutterbot
+# 🎵 GUTTERBOT
 
 **Discord bot for Gutterball Magazine - Automated Atlanta Music Event Discovery**
 

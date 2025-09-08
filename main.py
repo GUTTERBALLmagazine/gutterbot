@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 from src.lastfm.scraper import EventScraper
 from src.utils.config import Config
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -36,8 +37,8 @@ def main():
             Config.get_bandsintown_app_id()
         )
         
-        # Scrape and match
-        matches = scraper.scrape_and_match(usernames)
+        # Scrape and match (async)
+        matches = asyncio.run(scraper.scrape_and_match(usernames))
         
         # Display results
         print("\n" + "="*60)
