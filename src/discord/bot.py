@@ -36,6 +36,7 @@ class GutterBot(commands.Bot):
         self.guild_id = int(os.getenv('DISCORD_GUILD_ID', '0'))
         self.created_events = set()  # Track created events to prevent duplicates
         self.existing_events = set()  # Track existing events from previous runs
+        self.mode = os.getenv('GUTTERBOT_MODE', 'default')  # default | cleanup
         
     async def on_ready(self):
         """Called when bot is ready"""
@@ -46,12 +47,17 @@ class GutterBot(commands.Bot):
         # Load existing events to prevent duplicates
         await self.load_existing_events()
         
-        # Run event processing once and then exit
+        # Mode-based single-run behavior
         try:
-            await self.post_event_recommendations()
-            print("✅ Event processing complete. Bot will exit.")
+            if self.mode == 'cleanup':
+                print("🧹 Running cleanup mode...")
+                deleted = await self.clean_scheduled_events()
+                print(f"🧹 Cleanup complete. Removed {deleted} duplicate scheduled event(s).")
+            else:
+                await self.post_event_recommendations()
+                print("✅ Event processing complete. Bot will exit.")
         except Exception as e:
-            print(f"❌ Error during event processing: {e}")
+            print(f"❌ Error during bot run: {e}")
         finally:
             await self.close()
     
@@ -341,34 +347,32 @@ class GutterBot(commands.Bot):
     @commands.command(name='clean_events')
     async def clean_events_command(self, ctx):
         """Scan scheduled events and remove duplicates (keeps the earliest entry)."""
+        deleted = await self.clean_scheduled_events()
+        await ctx.send(f"🧹 removed {deleted} duplicate scheduled event(s)")
+
+    async def clean_scheduled_events(self) -> int:
+        """Remove duplicate scheduled events, keeping the oldest per unique key. Returns count deleted."""
         guild = self.get_guild(self.guild_id)
         if not guild:
-            await ctx.send(f"❌ Could not find guild {self.guild_id}")
-            return
-        
+            print(f"❌ Could not find guild {self.guild_id}")
+            return 0
         try:
             scheduled_events = await guild.fetch_scheduled_events()
-            await ctx.send(f"🧹 scanning {len(scheduled_events)} scheduled events for duplicates...")
-            
-            # Group by normalized (truncated + prefixed) name, start_time, location
+            print(f"🧹 scanning {len(scheduled_events)} scheduled events for duplicates...")
             groups = {}
             for ev in scheduled_events:
                 location = ev.entity_metadata.location if ev.entity_metadata else 'Unknown'
                 key = self._build_existing_event_key(ev.name, ev.start_time, location)
                 groups.setdefault(key, []).append(ev)
-            
             to_delete = []
             for key, evs in groups.items():
                 if len(evs) <= 1:
                     continue
-                # Keep the one with the smallest id (oldest), delete others
                 evs_sorted = sorted(evs, key=lambda e: e.id)
                 to_delete.extend(evs_sorted[1:])
-            
             if not to_delete:
-                await ctx.send("✅ no duplicates found")
-                return
-            
+                print("✅ no duplicates found")
+                return 0
             deleted = 0
             for ev in to_delete:
                 try:
@@ -376,10 +380,11 @@ class GutterBot(commands.Bot):
                     deleted += 1
                 except Exception as e:
                     print(f"❌ failed to delete duplicate event {ev.name}: {e}")
-            
-            await ctx.send(f"🧹 removed {deleted} duplicate scheduled event(s)")
+            print(f"🧹 removed {deleted} duplicate scheduled event(s)")
+            return deleted
         except Exception as e:
-            await ctx.send(f"❌ error during cleanup: {e}")
+            print(f"❌ error during cleanup: {e}")
+            return 0
     
     @commands.command(name='help')
     async def help_command(self, ctx):
