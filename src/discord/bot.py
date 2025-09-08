@@ -55,6 +55,17 @@ class GutterBot(commands.Bot):
         finally:
             await self.close()
     
+    def _normalize_event_name(self, title: str) -> str:
+        """Apply the same formatting/truncation we use when creating events."""
+        event_name = f"🎵 {title}"
+        if len(event_name) > 100:
+            event_name = event_name[:97] + "..."
+        return event_name
+    
+    def _build_existing_event_key(self, name: str, start_time: datetime, location: str) -> str:
+        """Consistent key format for existing scheduled events (as stored by Discord)."""
+        return f"{name}|{start_time.isoformat()}|{location or 'Unknown'}"
+    
     
     async def post_event_recommendations(self):
         """Post event recommendations to discord channel"""
@@ -218,7 +229,8 @@ class GutterBot(commands.Bot):
             for scheduled_event in scheduled_events:
                 # Extract event info from the scheduled event
                 # We'll use name, start_time, and location as the key
-                event_key = f"{scheduled_event.name}|{scheduled_event.start_time.isoformat()}|{scheduled_event.entity_metadata.location if scheduled_event.entity_metadata else 'Unknown'}"
+                location = scheduled_event.entity_metadata.location if scheduled_event.entity_metadata else 'Unknown'
+                event_key = self._build_existing_event_key(scheduled_event.name, scheduled_event.start_time, location)
                 self.existing_events.add(event_key)
                 print(f"📝 Loaded existing event: {scheduled_event.name}")
                 
@@ -242,7 +254,8 @@ class GutterBot(commands.Bot):
                 event_date = event_date.replace(tzinfo=timezone.utc)
             
             if event_date:
-                existing_key = f"🎵 {event.title}|{event_date.isoformat()}|{event.venue}"
+                normalized_name = self._normalize_event_name(event.title)
+                existing_key = self._build_existing_event_key(normalized_name, event_date, event.venue)
                 if existing_key in self.existing_events:
                     print(f"⏭️  Skipping duplicate event (previous run): {event.title}")
                     return None
@@ -264,9 +277,7 @@ class GutterBot(commands.Bot):
             end_time = event_date + timedelta(hours=3)
             
             # Create event name (limit to 100 chars)
-            event_name = f"🎵 {event.title}"
-            if len(event_name) > 100:
-                event_name = event_name[:97] + "..."
+            event_name = self._normalize_event_name(event.title)
             
             # Create description (limit to 1000 chars)
             description = f"**Artist:** {matched_artist}\n"
@@ -301,6 +312,9 @@ class GutterBot(commands.Bot):
             )
             
             print(f"✅ Created discord event: {event_name}")
+            # Track the newly created event in existing_events to avoid duplicates later in the same run
+            created_key = self._build_existing_event_key(event_name, event_date, event.venue)
+            self.existing_events.add(created_key)
             return scheduled_event
             
         except Exception as e:
@@ -324,6 +338,49 @@ class GutterBot(commands.Bot):
         await ctx.send("🎵 Creating discord scheduled events for current recommendations...")
         await self.post_event_recommendations()
     
+    @commands.command(name='clean_events')
+    async def clean_events_command(self, ctx):
+        """Scan scheduled events and remove duplicates (keeps the earliest entry)."""
+        guild = self.get_guild(self.guild_id)
+        if not guild:
+            await ctx.send(f"❌ Could not find guild {self.guild_id}")
+            return
+        
+        try:
+            scheduled_events = await guild.fetch_scheduled_events()
+            await ctx.send(f"🧹 scanning {len(scheduled_events)} scheduled events for duplicates...")
+            
+            # Group by normalized (truncated + prefixed) name, start_time, location
+            groups = {}
+            for ev in scheduled_events:
+                location = ev.entity_metadata.location if ev.entity_metadata else 'Unknown'
+                key = self._build_existing_event_key(ev.name, ev.start_time, location)
+                groups.setdefault(key, []).append(ev)
+            
+            to_delete = []
+            for key, evs in groups.items():
+                if len(evs) <= 1:
+                    continue
+                # Keep the one with the smallest id (oldest), delete others
+                evs_sorted = sorted(evs, key=lambda e: e.id)
+                to_delete.extend(evs_sorted[1:])
+            
+            if not to_delete:
+                await ctx.send("✅ no duplicates found")
+                return
+            
+            deleted = 0
+            for ev in to_delete:
+                try:
+                    await ev.delete()
+                    deleted += 1
+                except Exception as e:
+                    print(f"❌ failed to delete duplicate event {ev.name}: {e}")
+            
+            await ctx.send(f"🧹 removed {deleted} duplicate scheduled event(s)")
+        except Exception as e:
+            await ctx.send(f"❌ error during cleanup: {e}")
+    
     @commands.command(name='help')
     async def help_command(self, ctx):
         """Show help information"""
@@ -335,7 +392,7 @@ class GutterBot(commands.Bot):
         
         embed.add_field(
             name="Commands",
-            value="`!events` - fetch fresh event recommendations\n`!create_events` - create discord scheduled events\n`!ping` - check bot responsiveness\n`!help` - show this help",
+            value="`!events` - fetch fresh event recommendations\n`!create_events` - create discord scheduled events\n`!clean_events` - remove duplicate scheduled events\n`!ping` - check bot responsiveness\n`!help` - show this help",
             inline=False
         )
         

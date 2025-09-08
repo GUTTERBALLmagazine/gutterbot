@@ -31,3 +31,4 @@ jobs:
         BANDSINTOWN_APP_ID: ${{ secrets.BANDSINTOWN_APP_ID }}
         LASTFM_USERS: ${{ secrets.LASTFM_USERS }}
       run: python main.py
+

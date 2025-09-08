@@ -85,11 +85,12 @@ DISCORD_GUILD_ID=your_server_id
 - `!help` - Show available commands
 - `!ping` - Test bot connectivity
 - `!create_events` - Manually trigger event creation
+- `!clean_events` - Scan and remove duplicate scheduled events
 
 ### Automated Operation
 The bot automatically:
 1. Connects to Discord
-2. Loads existing scheduled events (prevents duplicates)
+2. Loads existing scheduled events (prevents duplicates with normalized keys)
 3. Scrapes Last.fm for your top artists
 4. Searches for upcoming Atlanta events
 5. Matches events to your listening history
@@ -120,6 +121,7 @@ src/
 - **Schedule**: Daily at 9 AM UTC (customizable)
 - **Benefits**: Free, automated, no server maintenance
 - **Setup**: See [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)
+- **Monitoring**: Dedupe logs show as "Skipping duplicate event" and cleanup results. Use workflow logs to verify.
 
 ### 2. Local Development
 - **File**: `run_discord_bot.py`
