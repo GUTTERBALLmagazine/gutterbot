@@ -1,9 +1,8 @@
 name: Event Scraping (No Discord)
 
 on:
-  schedule:
-    # Run daily at 9 AM UTC
-    - cron: '0 9 * * *'
+  # schedule:  # disabled; use manual runs for debugging only
+  #   - cron: '0 9 * * *'
   workflow_dispatch:
 
 jobs:
