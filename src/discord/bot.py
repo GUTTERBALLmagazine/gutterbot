@@ -37,6 +37,7 @@ class GutterBot(commands.Bot):
         self.created_events = set()  # Track created events to prevent duplicates
         self.existing_events = set()  # Track existing events from previous runs
         self.mode = os.getenv('GUTTERBOT_MODE', 'default')  # default | cleanup
+        self.existing_event_titles = set()  # Normalized titles from scheduled events
         
     async def on_ready(self):
         """Called when bot is ready"""
@@ -72,6 +73,17 @@ class GutterBot(commands.Bot):
         """Consistent key format for existing scheduled events (as stored by Discord)."""
         return f"{name}|{start_time.isoformat()}|{location or 'Unknown'}"
     
+    def _normalize_title_for_artist_match(self, name: str) -> str:
+        """Normalize a scheduled event name to approximate an artist identifier.
+        Removes prefix emoji, lowercases, and strips venue/date suffixes."""
+        title = name.lstrip('🎵').strip()
+        lowered = title.lower()
+        for sep in [' at ', ' @ ', ' - ']:
+            if sep in lowered:
+                lowered = lowered.split(sep)[0]
+                break
+        return ' '.join(lowered.split())
+    
     
     async def post_event_recommendations(self):
         """Post event recommendations to discord channel"""
@@ -88,8 +100,13 @@ class GutterBot(commands.Bot):
             await channel.send("❌ No usernames configured for tracking")
             return
         
-        # Scrape and match events with batch callback
-        matches = await self.scraper.scrape_and_match(usernames, batch_callback=self.process_batch_results)
+        # Scrape and match events with batch callback, excluding artists that already have scheduled events
+        exclude_artists = list(self.existing_event_titles) if self.existing_event_titles else None
+        matches = await self.scraper.scrape_and_match(
+            usernames,
+            batch_callback=self.process_batch_results,
+            exclude_artists=exclude_artists
+        )
         
         if not matches:
             await channel.send("🎵 No event matches found today")
@@ -240,6 +257,8 @@ class GutterBot(commands.Bot):
                 event_key = self._build_existing_event_key(scheduled_event.name, scheduled_event.start_time, location)
                 self.existing_events.add(event_key)
                 print(f"📝 Loaded existing event: {scheduled_event.name}")
+                # Track normalized title for artist exclusion during scraping
+                self.existing_event_titles.add(self._normalize_title_for_artist_match(scheduled_event.name))
                 
         except Exception as e:
             print(f"❌ Error loading existing events: {e}")

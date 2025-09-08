@@ -341,7 +341,7 @@ class EventScraper:
         return matches
     
     async def scrape_and_match(self, usernames: List[str], period: str = '1month', 
-                        use_optimized_search: bool = True, batch_callback=None) -> Dict[str, List[Tuple[Event, str, float]]]:
+                        use_optimized_search: bool = True, batch_callback=None, exclude_artists: List[str] = None) -> Dict[str, List[Tuple[Event, str, float]]]:
         """Main method: scrape events and match with user data"""
         print(f"🎵 Scraping data for users: {', '.join(usernames)}")
         
@@ -359,6 +359,14 @@ class EventScraper:
             for data in user_data.values():
                 all_artists.update(data.get_artist_names())
             
+            # Optionally exclude artists that already have scheduled events
+            if exclude_artists:
+                exclude_set = {a.lower() for a in exclude_artists}
+                filtered = []
+                for a in all_artists:
+                    if a.lower() not in exclude_set:
+                        filtered.append(a)
+                all_artists = filtered
             all_artists = list(all_artists)
             print(f"🎯 Found {len(all_artists)} unique artists across all users")
             
