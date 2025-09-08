@@ -235,7 +235,8 @@ class GutterBot(commands.Bot):
             for scheduled_event in scheduled_events:
                 # Extract event info from the scheduled event
                 # We'll use name, start_time, and location as the key
-                location = scheduled_event.entity_metadata.location if scheduled_event.entity_metadata else 'Unknown'
+                # discord.py exposes location directly for external events
+                location = getattr(scheduled_event, 'location', None) or 'Unknown'
                 event_key = self._build_existing_event_key(scheduled_event.name, scheduled_event.start_time, location)
                 self.existing_events.add(event_key)
                 print(f"📝 Loaded existing event: {scheduled_event.name}")
@@ -361,7 +362,7 @@ class GutterBot(commands.Bot):
             print(f"🧹 scanning {len(scheduled_events)} scheduled events for duplicates...")
             groups = {}
             for ev in scheduled_events:
-                location = ev.entity_metadata.location if ev.entity_metadata else 'Unknown'
+                location = getattr(ev, 'location', None) or 'Unknown'
                 key = self._build_existing_event_key(ev.name, ev.start_time, location)
                 groups.setdefault(key, []).append(ev)
             to_delete = []
