@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
+from difflib import SequenceMatcher
 import os
 
 from ..lastfm.scraper import EventScraper
@@ -68,6 +69,16 @@ class GutterBot(commands.Bot):
         if len(event_name) > 100:
             event_name = event_name[:97] + "..."
         return event_name
+
+    def _fuzzy_match_titles(self, title1: str, title2: str, threshold: float = 0.85) -> bool:
+        """Check if two event titles are fuzzy matches."""
+        norm1 = self._normalize_title_for_artist_match(title1)
+        norm2 = self._normalize_title_for_artist_match(title2)
+        return SequenceMatcher(None, norm1, norm2).ratio() >= threshold
+
+    def _is_time_close(self, time1: datetime, time2: datetime, delta_hours: int = 24) -> bool:
+        """Check if two datetimes are within delta hours."""
+        return abs((time1 - time2).total_seconds() / 3600) <= delta_hours
     
     def _build_existing_event_key(self, name: str, start_time: datetime, location: str) -> str:
         """Consistent key format for existing scheduled events (as stored by Discord)."""
@@ -271,7 +282,23 @@ class GutterBot(commands.Bot):
             if event_key in self.created_events:
                 print(f"⏭️  Skipping duplicate event (this run): {event.title}")
                 return None
-            
+
+            # Pre-creation fuzzy validation against existing Discord events
+            guild = self.get_guild(self.guild_id)
+            if guild:
+                scheduled_events = await guild.fetch_scheduled_events()
+                event_date = DateValidator.parse_event_date(event.date)
+                if event_date and event_date.tzinfo is None:
+                    from datetime import timezone
+                    event_date = event_date.replace(tzinfo=timezone.utc)
+
+                proposed_name = self._normalize_event_name(event.title)
+                for scheduled_event in scheduled_events:
+                    if (self._fuzzy_match_titles(proposed_name, scheduled_event.name) and
+                        self._is_time_close(event_date, scheduled_event.start_time)):
+                        print(f"⏭️  Skipping fuzzy duplicate: {event.title} matches existing {scheduled_event.name}")
+                        return None
+
             # Check against existing events from previous runs
             # We need to format the key to match how we store existing events
             event_date = DateValidator.parse_event_date(event.date)
@@ -379,17 +406,50 @@ class GutterBot(commands.Bot):
         try:
             scheduled_events = await guild.fetch_scheduled_events()
             print(f"🧹 scanning {len(scheduled_events)} scheduled events for duplicates...")
-            groups = {}
+            
+            # Fuzzy grouping
+            fuzzy_groups = {}
             for ev in scheduled_events:
                 location = getattr(ev, 'location', None) or 'Unknown'
-                key = self._build_existing_event_key(ev.name, ev.start_time, location)
-                groups.setdefault(key, []).append(ev)
+                # Use fuzzy key: normalized name + date + venue
+                fuzzy_key = f"{self._normalize_title_for_artist_match(ev.name)}|{ev.start_time.isoformat()}|{location}"
+                fuzzy_groups.setdefault(fuzzy_key, []).append(ev)
+            
+            # Also check cross-group fuzzy matches
             to_delete = []
-            for key, evs in groups.items():
-                if len(evs) <= 1:
+            processed = set()
+            for i, ev1 in enumerate(scheduled_events):
+                if ev1.id in processed:
                     continue
-                evs_sorted = sorted(evs, key=lambda e: e.id)
-                to_delete.extend(evs_sorted[1:])
+                group = []
+                for j, ev2 in enumerate(scheduled_events):
+                    if i == j or ev2.id in processed:
+                        continue
+                    if (self._fuzzy_match_titles(ev1.name, ev2.name) and
+                        self._is_time_close(ev1.start_time, ev2.start_time)):
+                        group.append(ev2)
+                        processed.add(ev2.id)
+                if group:
+                    group.append(ev1)
+                    # Keep the oldest
+                    group_sorted = sorted(group, key=lambda e: e.id)
+                    to_delete.extend(group_sorted[1:])
+                    processed.add(ev1.id)
+            
+            # Delete from exact groups too
+            exact_groups = {}
+            for ev in scheduled_events:
+                if ev.id in processed:
+                    continue
+                location = getattr(ev, 'location', None) or 'Unknown'
+                key = self._build_existing_event_key(ev.name, ev.start_time, location)
+                exact_groups.setdefault(key, []).append(ev)
+            
+            for key, evs in exact_groups.items():
+                if len(evs) > 1:
+                    evs_sorted = sorted(evs, key=lambda e: e.id)
+                    to_delete.extend(evs_sorted[1:])
+            
             if not to_delete:
                 print("✅ no duplicates found")
                 return 0
